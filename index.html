@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Mein Kochplan</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#4CAF50">
+  <link rel="apple-touch-icon" href="https://via.placeholder.com/192/4CAF50/ffffff?text=Kochplan">
+</head>
+<body>
+
+  <header>
+    <h1>Mein Kochplan</h1>
+  </header>
+
+  <nav class="nav-bar">
+    <button class="nav-btn active" data-tab="recipes">Gerichte</button>
+    <button class="nav-btn" data-tab="plan">14-Tage-Plan</button>
+    <button class="nav-btn" data-tab="shopping">Einkaufsliste</button>
+  </nav>
+
+  <main>
+    <!-- TAB 1: GERICHTE -->
+    <section id="recipes" class="tab-content active">
+      <h2 id="recipe-form-title">Neues Gericht hinzufügen</h2>
+      <form id="recipe-form" class="card">
+        <input type="hidden" id="recipe-id">
+        <input type="text" id="recipe-name" placeholder="Name des Gerichts (z. B. Spaghetti Bolognese)" required>
+        <textarea id="recipe-ingredients" placeholder="Zutaten mit Menge (eine pro Zeile)&#10;z. B.&#10;400g Nudeln&#10;500g Hackfleisch&#10;1 Dose Tomaten" rows="5" required></textarea>
+        
+        <button type="submit" id="recipe-submit-btn" class="btn btn-primary">Gericht speichern</button>
+        <button type="button" id="recipe-cancel-btn" class="btn btn-secondary hidden" style="margin-top: 8px;">Abbrechen</button>
+      </form>
+
+      <h2>Meine Gerichte</h2>
+      <div id="recipes-list" class="list-container"></div>
+    </section>
+
+    <!-- TAB 2: 14-TAGE-PLAN -->
+    <section id="plan" class="tab-content">
+      <h2>Wochenplaner (Nächste 14 Tage)</h2>
+      <p class="subtitle">Plane deine Mahlzeiten im Voraus:</p>
+      <div id="days-container" class="list-container"></div>
+    </section>
+
+    <!-- TAB 3: EINKAUFSLISTE -->
+    <section id="shopping" class="tab-content">
+      <div class="header-actions">
+        <h2>Einkaufsliste</h2>
+        <button id="clear-checked-btn" class="btn btn-small btn-danger-outline">Abgehakte löschen</button>
+      </div>
+
+      <!-- Schnell-Hinzufügen für Gewürze / Extra Artikel -->
+      <form id="quick-add-form" class="card quick-add-card">
+        <input type="text" id="quick-add-input" placeholder="Extra Zutat/Gewürz (z.B. Salz, 1 Prise Pfeffer)" required>
+        <button type="submit" class="btn btn-primary btn-small-inline">+ Hinzufügen</button>
+      </form>
+
+      <p class="subtitle">Sortiert nach Supermarkt (Mengen automatisch zusammengerechnet):</p>
+      <div id="shopping-by-store"></div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+
+  <!-- Inline Service Worker -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        const swCode = `
+          const CACHE_NAME = 'kochplan-v4';
+          self.addEventListener('install', e => e.waitUntil(caches.open(CACHE_NAME).then(c => c.addAll(['./', './index.html', './styles.css', './app.js', './manifest.json']))));
+          self.addEventListener('fetch', e => e.respondWith(caches.match(e.request).then(res => res || fetch(e.request))));
+        `;
+        const blob = new Blob([swCode], { type: 'application/javascript' });
+        const swUrl = URL.createObjectURL(blob);
+        navigator.serviceWorker.register(swUrl).catch(err => console.log('SW Register Fail:', err));
+      });
+    }
+  </script>
+</body>
+</html>
