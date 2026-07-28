@@ -7,92 +7,97 @@ const firebaseConfig = {
   appId: "1:461548419472:web:69bdc92272857318c99b15"
 
 };
-
-// ==========================================
-// FIREBASE KONFIGURATION
-// ==========================================
-const firebaseConfig = {
-  apiKey: "DEINE_API_KEY",
-  authDomain: "DEIN_PROJECT_ID.firebaseapp.com",
-  projectId: "DEIN_PROJECT_ID",
-  storageBucket: "DEIN_PROJECT_ID.appspot.com",
-  messagingSenderId: "DEINE_SENDER_ID",
-  appId: "DEINE_APP_ID"
-};
-
-// Firebase initialisieren
-if (!firebase.apps.length) {
-  firebase.initializeApp(firebaseConfig);
+// Firebase sicher initialisieren
+let db = null;
+try {
+  if (!firebase.apps.length) {
+    firebase.initializeApp(firebaseConfig);
+  }
+  db = firebase.firestore();
+} catch (e) {
+  console.error("Firebase konnte nicht initialisiert werden:", e);
 }
-const db = firebase.firestore();
 
 // Globale Variablen für lokalen Speicher
 let globalRecipes = [];
-let globalMealPlan = {}; // Format: { "YYYY-MM-DD": "recipeId" }
+let globalMealPlan = {};
 let globalShoppingList = [];
 
 // ==========================================
-// INITIALISIERUNG & TABS
+// SEITEN / TAB WECHSEL (Funktioniert immer)
 // ==========================================
-document.addEventListener("DOMContentLoaded", () => {
-  setupRealtimeListeners();
-
-  // Event-Listener für Suche/Filter
-  document.getElementById("recipe-search").addEventListener("input", renderRecipes);
-  document.getElementById("recipe-filter-category").addEventListener("change", renderRecipes);
-  document.getElementById("recipe-form").addEventListener("submit", handleRecipeSubmit);
-});
-
 function switchTab(tabName) {
-  document.querySelectorAll(".view-content").forEach(el => el.classList.add("hidden"));
-  document.querySelectorAll(".nav-btn").forEach(el => el.classList.remove("active"));
+  // 1. Alle Ansichten ausblenden
+  const views = document.querySelectorAll(".view-content");
+  views.forEach(v => v.classList.add("hidden"));
 
-  document.getElementById(`view-${tabName}`).classList.remove("hidden");
-  
-  // Aktiven Nav-Button hervorheben
-  const navBtns = document.querySelectorAll(".nav-btn");
-  if (tabName === 'recipes') navBtns[0].classList.add("active");
-  if (tabName === 'add-recipe') navBtns[1].classList.add("active");
-  if (tabName === 'meal-plan') {
-    navBtns[2].classList.add("active");
-    renderMealPlan();
+  // 2. Gewünschte Ansicht einblenden
+  const targetView = document.getElementById(`view-${tabName}`);
+  if (targetView) {
+    targetView.classList.remove("hidden");
   }
-  if (tabName === 'shopping') {
-    navBtns[3].classList.add("active");
+
+  // 3. Navigation-Buttons stylen
+  document.querySelectorAll(".nav-btn").forEach(btn => btn.classList.remove("active"));
+  const activeBtn = document.getElementById(`btn-${tabName}`);
+  if (activeBtn) {
+    activeBtn.classList.add("active");
+  }
+
+  // 4. Spezifische Inhalte laden
+  if (tabName === 'meal-plan') {
+    renderMealPlan();
+  } else if (tabName === 'shopping') {
     renderShoppingList();
+  } else if (tabName === 'recipes') {
+    renderRecipes();
   }
 }
+
+// ==========================================
+// INITIALISIERUNG
+// ==========================================
+document.addEventListener("DOMContentLoaded", () => {
+  if (db) {
+    setupRealtimeListeners();
+  }
+
+  const searchInput = document.getElementById("recipe-search");
+  const filterSelect = document.getElementById("recipe-filter-category");
+  const recipeForm = document.getElementById("recipe-form");
+
+  if (searchInput) searchInput.addEventListener("input", renderRecipes);
+  if (filterSelect) filterSelect.addEventListener("change", renderRecipes);
+  if (recipeForm) recipeForm.addEventListener("submit", handleRecipeSubmit);
+});
 
 // ==========================================
 // REALTIME LISTENERS (FIREBASE SYNC)
 // ==========================================
 function setupRealtimeListeners() {
-  // 1. Rezepte laden
   db.collection("recipes").onSnapshot(snapshot => {
     globalRecipes = [];
     snapshot.forEach(doc => {
       globalRecipes.push({ id: doc.id, ...doc.data() });
     });
     renderRecipes();
-  });
+  }, err => console.log("Fehler bei Rezepten:", err));
 
-  // 2. Essensplan laden
   db.collection("settings").doc("mealplan").onSnapshot(doc => {
     if (doc.exists) {
       globalMealPlan = doc.data().plan || {};
     } else {
       globalMealPlan = {};
     }
-  });
+  }, err => console.log("Fehler bei Essensplan:", err));
 
-  // 3. Einkaufszettel laden
   db.collection("shopping").onSnapshot(snapshot => {
     globalShoppingList = [];
     snapshot.forEach(doc => {
       globalShoppingList.push({ id: doc.id, ...doc.data() });
     });
     renderShoppingList();
-  });
+  }, err => console.log("Fehler bei Einkaufsliste:", err));
 }
 
 // ==========================================
@@ -100,20 +105,22 @@ function setupRealtimeListeners() {
 // ==========================================
 function renderRecipes() {
   const listContainer = document.getElementById("recipe-list");
-  const searchQuery = document.getElementById("recipe-search").value.toLowerCase();
-  const categoryFilter = document.getElementById("recipe-filter-category").value;
+  if (!listContainer) return;
+
+  const searchQuery = (document.getElementById("recipe-search")?.value || "").toLowerCase();
+  const categoryFilter = document.getElementById("recipe-filter-category")?.value || "";
 
   listContainer.innerHTML = "";
 
   const filtered = globalRecipes.filter(r => {
-    const matchesSearch = r.title.toLowerCase().includes(searchQuery) || 
-                          (r.ingredients && r.ingredients.toLowerCase().includes(searchQuery));
+    const matchesSearch = (r.title || "").toLowerCase().includes(searchQuery) || 
+                          (r.ingredients || "").toLowerCase().includes(searchQuery);
     const matchesCategory = categoryFilter === "" || r.category === categoryFilter;
     return matchesSearch && matchesCategory;
   });
 
   if (filtered.length === 0) {
-    listContainer.innerHTML = "<p style='color:#a0aec0; text-align:center;'>Keine Rezepte gefunden.</p>";
+    listContainer.innerHTML = "<p style='color:#a0aec0; text-align:center;'>Keine Rezepte vorhanden.</p>";
     return;
   }
 
@@ -131,7 +138,7 @@ function renderRecipes() {
       <details style="margin-top:8px;">
         <summary style="cursor:pointer; font-weight:600; color:var(--primary);">Zutaten & Zubereitung anzeigen</summary>
         <div style="margin-top:8px; white-space: pre-line; font-size:0.9rem;">
-          <strong>Zutaten:</strong>\n${r.ingredients}\n\n<strong>Anleitung:</strong>\n${r.instructions}
+          <strong>Zutaten:</strong>\n${r.ingredients || ''}\n\n<strong>Anleitung:</strong>\n${r.instructions || ''}
         </div>
       </details>
 
@@ -146,6 +153,8 @@ function renderRecipes() {
 
 async function handleRecipeSubmit(e) {
   e.preventDefault();
+  if (!db) return alert("Firebase ist nicht verbunden!");
+
   const id = document.getElementById("recipe-id").value;
   const title = document.getElementById("recipe-title").value;
   const category = document.getElementById("recipe-category").value;
@@ -157,8 +166,7 @@ async function handleRecipeSubmit(e) {
 
   let imageUrl = "";
 
-  // Bild als Base64 konvertieren (falls ausgewählt)
-  if (fileInput.files.length > 0) {
+  if (fileInput && fileInput.files.length > 0) {
     imageUrl = await convertFileToBase64(fileInput.files[0]);
   } else if (id) {
     const existing = globalRecipes.find(r => r.id === id);
@@ -203,13 +211,13 @@ function editRecipe(id) {
 }
 
 async function deleteRecipe(id) {
-  if (confirm("Möchtest du dieses Rezept wirklich löschen?")) {
+  if (confirm("Möchtest du dieses Rezept wirklich löschen?") && db) {
     await db.collection("recipes").doc(id).delete();
   }
 }
 
 function resetRecipeForm() {
-  document.getElementById("recipe-form").reset();
+  document.getElementById("recipe-form")?.reset();
   document.getElementById("recipe-id").value = "";
   document.getElementById("recipe-form-title").innerText = "Neues Rezept anlegen";
 }
@@ -219,8 +227,9 @@ function resetRecipeForm() {
 // ==========================================
 function renderMealPlan() {
   const container = document.getElementById("meal-plan-list");
-  container.innerHTML = "";
+  if (!container) return;
 
+  container.innerHTML = "";
   const today = new Date();
   const daysOptions = { weekday: 'short', day: '2-digit', month: '2-digit' };
 
@@ -228,10 +237,8 @@ function renderMealPlan() {
     const date = new Date(today);
     date.setDate(today.getDate() + i);
     
-    // Datum-Schlüssel im Format YYYY-MM-DD
     const dateKey = date.toISOString().split('T')[0];
     const dateString = date.toLocaleDateString('de-DE', daysOptions);
-
     const selectedRecipeId = globalMealPlan[dateKey] || "";
 
     const card = document.createElement("div");
@@ -264,88 +271,123 @@ async function updateMealPlanDay(dateKey, recipeId) {
     delete globalMealPlan[dateKey];
   }
 
-  await db.collection("settings").doc("mealplan").set({ plan: globalMealPlan });
+  if (db) {
+    await db.collection("settings").doc("mealplan").set({ plan: globalMealPlan });
+  }
 }
 
 // ==========================================
-// ZUTATEN ADDITION & EINKAUFSZETTEL-TRANSFER
+// ZUTATEN ZUSAMMENFASSEN & AUF EINKAUFSZETTEL SETZEN
 // ==========================================
 async function transferMealPlanToShoppingList() {
-  // Alle gewählten Rezepte ermitteln
-  const activeRecipeIds = Object.values(globalMealPlan).filter(id => id !== "");
+  if (!db) return alert("Firebase ist nicht verbunden!");
+
+  const activeRecipeIds = Object.values(globalMealPlan).filter(id => id && id !== "");
 
   if (activeRecipeIds.length === 0) {
     alert("Es wurden keine Gerichte im 14-Tage-Plan ausgewählt!");
     return;
   }
 
-  const ingredientMap = {}; // { "hackfleisch_g": { amount: 750, unit: "g", name: "Hackfleisch" } }
+  const ingredientMap = {};
 
   activeRecipeIds.forEach(id => {
     const recipe = globalRecipes.find(r => r.id === id);
     if (recipe && recipe.ingredients) {
       const lines = recipe.ingredients.split("\n");
       lines.forEach(line => {
-        const parsed = parseIngredientLine(line.trim());
-        if (parsed.name) {
-          const key = (parsed.name + "_" + parsed.unit).toLowerCase();
-          if (!ingredientMap[key]) {
-            ingredientMap[key] = { ...parsed };
-          } else {
-            ingredientMap[key].amount += parsed.amount;
-          }
+        const cleanLine = line.trim();
+        if (!cleanLine) return;
+
+        const parsed = parseIngredientLine(cleanLine);
+        
+        // Schlüssel zum Erkennen von Duplikaten (z. B. "milch_ml")
+        const key = `${parsed.normalizedName}_${parsed.unit}`.toLowerCase();
+
+        if (!ingredientMap[key]) {
+          ingredientMap[key] = {
+            displayName: parsed.displayName,
+            amount: parsed.amount,
+            unit: parsed.unit
+          };
+        } else {
+          // Gleiche Zutat gefunden -> Menge aufaddieren!
+          ingredientMap[key].amount += parsed.amount;
         }
       });
     }
   });
 
-  // In Firestore hochladen
   const batch = db.batch();
 
   Object.values(ingredientMap).forEach(item => {
-    let itemText = item.name;
+    let itemText = item.displayName;
+
     if (item.amount > 0) {
-      itemText = `${item.amount}${item.unit ? item.unit + ' ' : ' '}${item.name}`;
+      const formattedAmount = Math.round(item.amount * 100) / 100;
+      // Sorgt für ein sauberes Leerzeichen zwischen Menge, Einheit und Name
+      itemText = `${formattedAmount} ${item.unit ? item.unit + ' ' : ''}${item.displayName}`;
     }
 
     const docRef = db.collection("shopping").doc();
     batch.set(docRef, {
       name: itemText,
-      store: "Sonstiges",
+      store: "Sonstiges", // Standard-Kategorie
       completed: false,
       createdAt: firebase.firestore.FieldValue.serverTimestamp()
     });
   });
 
   await batch.commit();
-  alert("Zutaten wurden erfolgreich zusammengerechnet und auf den Einkaufszettel gesetzt!");
+  alert("Zutaten wurden erfolgreich zusammengefasst und auf den Einkaufszettel gesetzt!");
   switchTab("shopping");
 }
 
-// Hilfsfunktion: Zerlegt "500g Hackfleisch" in Menge, Einheit & Name
+// Erweitertes Parsing: Erkennt "gr", "ml", "l", "g", Brüche etc.
 function parseIngredientLine(line) {
-  if (!line) return { amount: 0, unit: "", name: "" };
+  if (!line) return { amount: 0, unit: "", displayName: "", normalizedName: "" };
 
-  // RegEx sucht nach Zahlen am Anfang (z. B. 500, 1.5, 1/2) und Einheiten (g, kg, ml, el, tl, dose, dosten, etc.)
-  const regex = /^([\d.,]+)?\s*(g|kg|ml|l|el|tl|pck|packung|dose|dosen|becher|zehe|zehen|stk|stück)?\s*(.*)$/i;
+  // Erfassung von Mengenangaben & Einheiten (inkl. "gr" aus deinem Screenshot)
+  const regex = /^([\d.,]+|\d+\/\d+)?\s*(gr|g|kg|ml|l|el|tl|pck|packung|dose|dosen|becher|zehe|zehen|stk|stück|prise|prisen)?\s*(.*)$/i;
   const match = line.match(regex);
 
   if (match) {
-    let amountStr = match[1] ? match[1].replace(",", ".") : "0";
-    let amount = parseFloat(amountStr) || 0;
+    let rawAmount = match[1] || "0";
+    let amount = 0;
+
+    if (rawAmount.includes('/')) {
+      const parts = rawAmount.split('/');
+      amount = parseFloat(parts[0]) / parseFloat(parts[1]);
+    } else {
+      amount = parseFloat(rawAmount.replace(',', '.')) || 0;
+    }
+
     let unit = match[2] ? match[2].toLowerCase() : "";
     let name = match[3] ? match[3].trim() : line;
 
-    // Wenn keine Mengenangabe vorhanden war
+    // "gr" einheitlich zu "g" machen, um Duplikate zu vermeiden
+    if (unit === "gr") unit = "g";
+
     if (!match[1] && !match[2]) {
       name = line;
       amount = 0;
     }
 
-    return { amount, unit, name };
+    // Name bereinigen (Groß-/Kleinschreibung & Plural-Endungen ignorieren)
+    const normalizedName = name.toLowerCase().replace(/s$/, '').trim();
+
+    // Den ersten Buchstaben des Namens großschreiben für schöne Optik
+    const displayName = name.charAt(0).toUpperCase() + name.slice(1);
+
+    return {
+      amount,
+      unit,
+      displayName,
+      normalizedName
+    };
   }
 
-  return { amount: 0, unit: "", name: line };
+  return { amount: 0, unit: "", displayName: line, normalizedName: line.toLowerCase() };
 }
 
 // ==========================================
@@ -353,6 +395,8 @@ function parseIngredientLine(line) {
 // ==========================================
 function renderShoppingList() {
   const container = document.getElementById("shopping-list-container");
+  if (!container) return;
+
   container.innerHTML = "";
 
   if (globalShoppingList.length === 0) {
@@ -368,19 +412,33 @@ function renderShoppingList() {
     grouped[store].push(item);
   });
 
+  const availableStores = ["Edeka", "Rewe", "Aldi", "Lidl", "DM", "Sonstiges"];
+
   for (const [store, items] of Object.entries(grouped)) {
     const section = document.createElement("div");
     section.className = "store-section";
 
     let itemsHtml = "";
     items.forEach(item => {
+      // Dropdown-Optionen für den Supermarkt dieses spezifischen Items generieren
+      let storeOptionsHtml = "";
+      availableStores.forEach(s => {
+        storeOptionsHtml += `<option value="${s}" ${item.store === s ? 'selected' : ''}>${s}</option>`;
+      });
+
       itemsHtml += `
         <div class="shopping-item-row ${item.completed ? 'completed' : ''}">
-          <label style="display:flex; align-items:center; gap:8px; font-weight:normal; cursor:pointer;">
+          <label style="display:flex; align-items:center; gap:8px; font-weight:normal; cursor:pointer; flex:1;">
             <input type="checkbox" ${item.completed ? 'checked' : ''} onchange="toggleShoppingItem('${item.id}', ${!item.completed})">
             <span>${item.name}</span>
           </label>
-          <button onclick="deleteShoppingItem('${item.id}')" style="background:none; border:none; color:var(--danger); cursor:pointer;">✕</button>
+          
+          <!-- Dropdown zur Zuordnung an einen Supermarkt -->
+          <select onchange="updateItemStore('${item.id}', this.value)" style="width: auto; padding: 2px 6px; font-size: 0.8rem; margin-right: 8px;">
+            ${storeOptionsHtml}
+          </select>
+
+          <button onclick="deleteShoppingItem('${item.id}')" style="background:none; border:none; color:var(--danger); cursor:pointer; font-weight:bold;">✕</button>
         </div>
       `;
     });
@@ -394,32 +452,22 @@ function renderShoppingList() {
   }
 }
 
-async function addShoppingItemManual(e) {
-  e.preventDefault();
-  const input = document.getElementById("shopping-input");
-  const store = document.getElementById("shopping-store").value;
-
-  if (!input.value.trim()) return;
-
-  await db.collection("shopping").add({
-    name: input.value.trim(),
-    store: store,
-    completed: false,
-    createdAt: firebase.firestore.FieldValue.serverTimestamp()
-  });
-
-  input.value = "";
+// Funktion zum Ändern des Supermarktes eines Items
+async function updateItemStore(id, newStore) {
+  if (db) {
+    await db.collection("shopping").doc(id).update({ store: newStore });
+  }
 }
-
 async function toggleShoppingItem(id, completed) {
-  await db.collection("shopping").doc(id).update({ completed });
+  if (db) await db.collection("shopping").doc(id).update({ completed });
 }
 
 async function deleteShoppingItem(id) {
-  await db.collection("shopping").doc(id).delete();
+  if (db) await db.collection("shopping").doc(id).delete();
 }
 
 async function clearCompletedShoppingItems() {
+  if (!db) return;
   const completedItems = globalShoppingList.filter(i => i.completed);
   const batch = db.batch();
 

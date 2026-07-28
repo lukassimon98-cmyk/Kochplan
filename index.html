@@ -9,8 +9,8 @@
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
 
-  <!-- Eigenes JS-Skript (mit Cache-Buster v=4) -->
-  <script src="app.js?v=4" defer></script>
+  <!-- Eigenes JS-Skript (Version v=8 für Cache-Busting) -->
+  <script src="app.js?v=8" defer></script>
 
   <style>
     :root {
@@ -38,7 +38,6 @@
       padding-bottom: 40px;
     }
 
-    /* Header & Navigation */
     header {
       background-color: var(--primary);
       color: white;
@@ -58,7 +57,7 @@
     nav {
       display: flex;
       justify-content: center;
-      gap: 4px;
+      gap: 6px;
       flex-wrap: wrap;
     }
 
@@ -66,7 +65,7 @@
       background: rgba(255, 255, 255, 0.2);
       border: none;
       color: white;
-      padding: 6px 12px;
+      padding: 8px 14px;
       border-radius: 20px;
       font-weight: 600;
       cursor: pointer;
@@ -79,7 +78,6 @@
       color: var(--primary);
     }
 
-    /* Layout Container */
     .container {
       max-width: 650px;
       margin: 20px auto;
@@ -97,7 +95,6 @@
       display: none !important;
     }
 
-    /* Formulare & Eingaben */
     h2 {
       font-size: 1.2rem;
       margin-bottom: 16px;
@@ -130,7 +127,6 @@
       background: #fff;
     }
 
-    /* Buttons */
     .btn {
       display: inline-block;
       width: 100%;
@@ -143,29 +139,11 @@
       font-size: 0.95rem;
     }
 
-    .btn-primary {
-      background-color: var(--primary);
-      color: white;
-    }
+    .btn-primary { background-color: var(--primary); color: white; }
+    .btn-secondary { background-color: #edf2f7; color: #4a5568; border: 1px solid var(--border-color); }
+    .btn-success { background-color: var(--success); color: white; }
+    .btn-small { padding: 6px 12px; font-size: 0.85rem; width: auto; }
 
-    .btn-secondary {
-      background-color: #edf2f7;
-      color: #4a5568;
-      border: 1px solid var(--border-color);
-    }
-
-    .btn-success {
-      background-color: var(--success);
-      color: white;
-    }
-
-    .btn-small {
-      padding: 6px 12px;
-      font-size: 0.85rem;
-      width: auto;
-    }
-
-    /* Wochenplan Kacheln */
     .meal-day-card {
       border: 1px solid var(--border-color);
       border-radius: 8px;
@@ -183,10 +161,7 @@
       font-size: 0.95rem;
     }
 
-    /* Shopping List Store Grouping */
-    .store-section {
-      margin-bottom: 20px;
-    }
+    .store-section { margin-bottom: 20px; }
     .store-title {
       font-size: 1rem;
       font-weight: bold;
@@ -208,6 +183,29 @@
       text-decoration: line-through;
       color: #a0aec0;
     }
+
+    .list-item {
+      background: #fff;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 14px;
+      margin-bottom: 14px;
+    }
+
+    .item-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .badge {
+      background: #ebf8ff;
+      color: #2b6cb0;
+      font-size: 0.75rem;
+      font-weight: bold;
+      padding: 2px 8px;
+      border-radius: 12px;
+    }
   </style>
 </head>
 <body>
@@ -215,21 +213,19 @@
   <header>
     <h1>🍳 Meine Koch-App</h1>
     <nav>
-      <button class="nav-btn active" onclick="switchTab('recipes')">Rezepte</button>
-      <button class="nav-btn" onclick="switchTab('add-recipe')">+ Rezept</button>
-      <button class="nav-btn" onclick="switchTab('meal-plan')">📅 Wochenplan</button>
-      <button class="nav-btn" onclick="switchTab('shopping')">🛒 Einkaufszettel</button>
+      <button class="nav-btn active" id="btn-recipes" onclick="switchTab('recipes')">Rezepte</button>
+      <button class="nav-btn" id="btn-add-recipe" onclick="switchTab('add-recipe')">+ Rezept</button>
+      <button class="nav-btn" id="btn-meal-plan" onclick="switchTab('meal-plan')">📅 Wochenplan</button>
+      <button class="nav-btn" id="btn-shopping" onclick="switchTab('shopping')">🛒 Einkaufszettel</button>
     </nav>
   </header>
 
   <div class="container">
 
-    <!-- ========================================== -->
-    <!-- TAB 1: REZEPTE UEBERSICHT & SUCHE -->
-    <!-- ========================================== -->
+    <!-- TAB 1: REZEPTE -->
     <div id="view-recipes" class="view-content">
       <h2>📖 Meine Rezepte</h2>
-      <div class="search-bar" style="display: flex; gap: 8px; margin-bottom: 16px;">
+      <div style="display: flex; gap: 8px; margin-bottom: 16px;">
         <input type="text" id="recipe-search" placeholder="🔍 Suche..." style="flex: 2;">
         <select id="recipe-filter-category" style="flex: 1;">
           <option value="">Alle Kategorien</option>
@@ -242,9 +238,7 @@
       <div id="recipe-list"></div>
     </div>
 
-    <!-- ========================================== -->
-    <!-- TAB 2: NEUES REZEPT ANLEGEN / EDITIEREN -->
-    <!-- ========================================== -->
+    <!-- TAB 2: NEUES REZEPT -->
     <div id="view-add-recipe" class="view-content hidden">
       <h2 id="recipe-form-title">Neues Rezept anlegen</h2>
 
@@ -279,9 +273,6 @@
         <div class="form-group">
           <label for="recipe-image">Foto hinzufügen (Optional)</label>
           <input type="file" id="recipe-image" accept="image/*">
-          <div id="image-preview-container" class="hidden" style="margin-top: 8px;">
-            <img id="recipe-image-preview" src="" alt="Vorschau" style="max-width: 100%; max-height: 150px; border-radius: 6px;">
-          </div>
         </div>
 
         <div class="form-group">
@@ -301,9 +292,7 @@
       </form>
     </div>
 
-    <!-- ========================================== -->
-    <!-- TAB 3: 14-TAGE ESSENSPLAN -->
-    <!-- ========================================== -->
+    <!-- TAB 3: 14-TAGE PLAN -->
     <div id="view-meal-plan" class="view-content hidden">
       <h2>📅 14-Tage Essensplan</h2>
       <p style="font-size: 0.85rem; color: #718096; margin-bottom: 12px;">
@@ -317,13 +306,10 @@
       <div id="meal-plan-list"></div>
     </div>
 
-    <!-- ========================================== -->
     <!-- TAB 4: EINKAUFSZETTEL -->
-    <!-- ========================================== -->
     <div id="view-shopping" class="view-content hidden">
       <h2>🛒 Einkaufszettel</h2>
 
-      <!-- Manueller Eintrag -->
       <form onsubmit="addShoppingItemManual(event)" style="display:flex; gap:8px; margin-bottom:12px;">
         <input type="text" id="shopping-input" placeholder="Artikel (z. B. 500g Hackfleisch)" required style="flex:2;">
         
@@ -339,7 +325,6 @@
         <button type="submit" class="btn btn-primary" style="width: auto; padding: 0 16px;">+</button>
       </form>
 
-      <!-- Liste der Artikel -->
       <div id="shopping-list-container"></div>
 
       <div style="text-align:right; margin-top:16px;">
