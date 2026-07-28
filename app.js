@@ -1,422 +1,467 @@
-const STORES = ['Aldi', 'REWE', 'Edeka', 'HIT', 'Sonstige'];
+const firebaseConfig = {
+  apiKey: "AIzaSyAk62DFEE6PTiTlUD7XU5Q0B3bb4OI_92k",
+  authDomain: "kochplan-65d85.firebaseapp.com",
+  projectId: "kochplan-65d85",
+  storageBucket: "kochplan-65d85.firebasestorage.app",
+  messagingSenderId: "461548419472",
+  appId: "1:461548419472:web:69bdc92272857318c99b15"
 
-// Datenmodell
-let recipes = JSON.parse(localStorage.getItem('kochplan_recipes')) || [];
-let planMap = JSON.parse(localStorage.getItem('kochplan_map')) || {};
-let checkedItems = JSON.parse(localStorage.getItem('kochplan_checked')) || [];
-let deletedItems = JSON.parse(localStorage.getItem('kochplan_deleted')) || []; // NEU: Gelöschte/Ausgeblendete Elemente
-let storeAssignments = JSON.parse(localStorage.getItem('kochplan_store_assignments')) || {};
-let customShoppingItems = JSON.parse(localStorage.getItem('kochplan_custom_items')) || [];
+};
 
+
+// Firebase & Cloud Firestore initialisieren
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+
+// Globale Variablen für den Zustand
+let recipes = [];
+let shoppingList = [];
+let currentRecipeImageBase64 = "";
+let selectedStoreFilter = "ALLE"; // Filter für den Einkaufszettel
+
+// ==========================================
+// 1. INITIALISIERUNG & ECHTZEIT-LISTEN (FIRESTORE)
+// ==========================================
 document.addEventListener('DOMContentLoaded', () => {
-  setupNavigation();
+  setupImageUpload();
   setupRecipeForm();
-  setupShoppingEvents();
-  
-  renderRecipes();
-  renderPlan();
-  renderShoppingList();
+  setupSearchAndFilter();
+
+  // 🔄 Live-Stream für Rezepte aus Firebase
+  db.collection('recipes').orderBy('createdAt', 'desc').onSnapshot(snapshot => {
+    recipes = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    renderRecipes();
+  }, error => {
+    console.error("Fehler beim Laden der Rezepte:", error);
+  });
+
+  // 🔄 Live-Stream für die Einkaufsliste aus Firebase
+  db.collection('shoppingList').orderBy('createdAt', 'desc').onSnapshot(snapshot => {
+    shoppingList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    renderShoppingList();
+    renderStoreFilterButtons();
+  }, error => {
+    console.error("Fehler beim Laden der Einkaufsliste:", error);
+  });
 });
 
-function saveData() {
-  localStorage.setItem('kochplan_recipes', JSON.stringify(recipes));
-  localStorage.setItem('kochplan_map', JSON.stringify(planMap));
-  localStorage.setItem('kochplan_checked', JSON.stringify(checkedItems));
-  localStorage.setItem('kochplan_deleted', JSON.stringify(deletedItems));
-  localStorage.setItem('kochplan_store_assignments', JSON.stringify(storeAssignments));
-  localStorage.setItem('kochplan_custom_items', JSON.stringify(customShoppingItems));
-}
+// Navigation / Tab-Wechsel (z. B. zwischen Rezepten & Einkaufszettel)
+window.switchTab = function(tabName) {
+  document.querySelectorAll('.nav-btn').forEach(btn => btn.classList.remove('active'));
+  document.querySelectorAll('.view-content').forEach(view => view.classList.add('hidden'));
 
-// 1. Navigation
-function setupNavigation() {
-  const navBtns = document.querySelectorAll('.nav-btn');
-  const tabs = document.querySelectorAll('.tab-content');
+  const activeView = document.getElementById(`view-${tabName}`);
+  if (activeView) activeView.classList.remove('hidden');
 
-  navBtns.forEach(btn => {
-    btn.addEventListener('click', () => {
-      navBtns.forEach(b => b.classList.remove('active'));
-      tabs.forEach(t => t.classList.remove('active'));
+  if (event && event.target && event.target.classList.contains('nav-btn')) {
+    event.target.classList.add('active');
+  }
+};
 
-      btn.classList.add('active');
-      document.getElementById(btn.dataset.tab).classList.add('active');
+// ==========================================
+// 2. REZEPT-BILD UPLOAD (VORSCHAU & BASE64)
+// ==========================================
+function setupImageUpload() {
+  const fileInput = document.getElementById('recipe-image');
+  const preview = document.getElementById('recipe-image-preview');
+  const previewContainer = document.getElementById('image-preview-container');
 
-      if (btn.dataset.tab === 'shopping') {
-        renderShoppingList();
-      }
-    });
+  if (!fileInput) return;
+
+  fileInput.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = function(evt) {
+        currentRecipeImageBase64 = evt.target.result;
+        if (preview) preview.src = currentRecipeImageBase64;
+        if (previewContainer) previewContainer.classList.remove('hidden');
+      };
+      reader.readAsDataURL(file);
+    }
   });
 }
 
-// 2. Gerichte-Verwaltung (Anlegen & Bearbeiten)
+// ==========================================
+// 3. REZEPTE SPEICHERN, EDITIEREN & LÖSCHEN
+// ==========================================
 function setupRecipeForm() {
   const form = document.getElementById('recipe-form');
-  const cancelBtn = document.getElementById('recipe-cancel-btn');
+  if (!form) return;
 
-  form.addEventListener('submit', (e) => {
+  form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const recipeId = document.getElementById('recipe-id').value;
-    const nameInput = document.getElementById('recipe-name').value.trim();
-    const ingredientsInput = document.getElementById('recipe-ingredients').value;
 
-    const rawIngredients = ingredientsInput
-      .split('\n')
-      .map(i => i.trim())
-      .filter(i => i.length > 0);
+    const recipeId = document.getElementById('recipe-id') ? document.getElementById('recipe-id').value : '';
+    const title = document.getElementById('recipe-title').value.trim();
+    const category = document.getElementById('recipe-category') ? document.getElementById('recipe-category').value : 'Hauptspeise';
+    const prepTime = parseInt(document.getElementById('recipe-time') ? document.getElementById('recipe-time').value : 0) || 0;
+    const servings = parseInt(document.getElementById('recipe-servings') ? document.getElementById('recipe-servings').value : 1) || 1;
+    const ingredients = document.getElementById('recipe-ingredients').value.trim();
+    const instructions = document.getElementById('recipe-instructions').value.trim();
 
-    if (recipeId) {
-      // Bearbeiten
-      const idx = recipes.findIndex(r => r.id === recipeId);
-      if (idx > -1) {
-        recipes[idx].name = nameInput;
-        recipes[idx].ingredients = rawIngredients;
-      }
-    } else {
-      // Neu anlegen
-      recipes.push({
-        id: Date.now().toString(),
-        name: nameInput,
-        ingredients: rawIngredients
-      });
+    if (!title || !ingredients || !instructions) {
+      alert('Bitte fülle mindestens Titel, Zutaten und Zubereitung aus.');
+      return;
     }
 
-    saveData();
-    resetRecipeForm();
-    renderRecipes();
-    renderPlan();
-  });
+    const recipeData = {
+      title,
+      category,
+      prepTime,
+      servings,
+      ingredients,
+      instructions,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    };
 
-  cancelBtn.addEventListener('click', resetRecipeForm);
-}
+    if (currentRecipeImageBase64) {
+      recipeData.image = currentRecipeImageBase64;
+    }
 
-function resetRecipeForm() {
-  document.getElementById('recipe-id').value = '';
-  document.getElementById('recipe-name').value = '';
-  document.getElementById('recipe-ingredients').value = '';
-  document.getElementById('recipe-form-title').innerText = 'Neues Gericht hinzufügen';
-  document.getElementById('recipe-submit-btn').innerText = 'Gericht speichern';
-  document.getElementById('recipe-cancel-btn').classList.add('hidden');
-}
-
-function renderRecipes() {
-  const container = document.getElementById('recipes-list');
-  container.innerHTML = '';
-
-  if (recipes.length === 0) {
-    container.innerHTML = '<p class="subtitle">Noch keine Gerichte angelegt.</p>';
-    return;
-  }
-
-  recipes.forEach(recipe => {
-    const item = document.createElement('div');
-    item.className = 'list-item';
-    item.innerHTML = `
-      <div>
-        <strong>${escapeHtml(recipe.name)}</strong>
-        <div style="font-size:0.8rem; color:#666;">${recipe.ingredients.length} Zutat(en)</div>
-      </div>
-      <div>
-        <button class="action-btn edit-btn" onclick="editRecipe('${recipe.id}')" title="Bearbeiten">✏️</button>
-        <button class="action-btn delete-btn" onclick="deleteRecipe('${recipe.id}')" title="Löschen">&times;</button>
-      </div>
-    `;
-    container.appendChild(item);
+    try {
+      if (recipeId && recipeId !== "") {
+        await db.collection('recipes').doc(recipeId).update(recipeData);
+      } else {
+        recipeData.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+        await db.collection('recipes').add(recipeData);
+      }
+      resetRecipeForm();
+    } catch (error) {
+      console.error("Fehler beim Speichern in Firebase:", error);
+      alert("Fehler beim Speichern des Rezepts!");
+    }
   });
 }
+
+window.resetRecipeForm = function() {
+  const form = document.getElementById('recipe-form');
+  if (form) form.reset();
+
+  if (document.getElementById('recipe-id')) document.getElementById('recipe-id').value = '';
+  if (document.getElementById('recipe-image-preview')) document.getElementById('recipe-image-preview').src = '';
+  if (document.getElementById('image-preview-container')) document.getElementById('image-preview-container').classList.add('hidden');
+  
+  const submitBtn = document.getElementById('recipe-submit-btn');
+  if (submitBtn) submitBtn.innerText = 'Rezept speichern';
+  
+  const formTitle = document.getElementById('recipe-form-title');
+  if (formTitle) formTitle.innerText = 'Neues Rezept anlegen';
+
+  currentRecipeImageBase64 = "";
+};
 
 window.editRecipe = function(id) {
-  const recipe = recipes.find(r => r.id === id);
+  const recipe = recipes.find(r => String(r.id) === String(id));
   if (!recipe) return;
 
-  document.getElementById('recipe-id').value = recipe.id;
-  document.getElementById('recipe-name').value = recipe.name;
-  document.getElementById('recipe-ingredients').value = recipe.ingredients.join('\n');
+  if (document.getElementById('recipe-id')) document.getElementById('recipe-id').value = recipe.id;
+  if (document.getElementById('recipe-title')) document.getElementById('recipe-title').value = recipe.title;
+  if (document.getElementById('recipe-category')) document.getElementById('recipe-category').value = recipe.category;
+  if (document.getElementById('recipe-time')) document.getElementById('recipe-time').value = recipe.prepTime || '';
+  if (document.getElementById('recipe-servings')) document.getElementById('recipe-servings').value = recipe.servings || 1;
+  if (document.getElementById('recipe-ingredients')) document.getElementById('recipe-ingredients').value = recipe.ingredients;
+  if (document.getElementById('recipe-instructions')) document.getElementById('recipe-instructions').value = recipe.instructions;
 
-  document.getElementById('recipe-form-title').innerText = 'Gericht bearbeiten';
-  document.getElementById('recipe-submit-btn').innerText = 'Änderungen speichern';
-  document.getElementById('recipe-cancel-btn').classList.remove('hidden');
+  if (recipe.image) {
+    currentRecipeImageBase64 = recipe.image;
+    if (document.getElementById('recipe-image-preview')) document.getElementById('recipe-image-preview').src = recipe.image;
+    if (document.getElementById('image-preview-container')) document.getElementById('image-preview-container').classList.remove('hidden');
+  }
+
+  const submitBtn = document.getElementById('recipe-submit-btn');
+  if (submitBtn) submitBtn.innerText = 'Änderungen speichern';
+  
+  const formTitle = document.getElementById('recipe-form-title');
+  if (formTitle) formTitle.innerText = 'Rezept bearbeiten';
 
   window.scrollTo({ top: 0, behavior: 'smooth' });
 };
 
-window.deleteRecipe = function(id) {
-  recipes = recipes.filter(r => r.id !== id);
-  Object.keys(planMap).forEach(dateStr => {
-    planMap[dateStr] = planMap[dateStr].filter(mId => mId !== id);
-  });
-  saveData();
-  renderRecipes();
-  renderPlan();
+window.deleteRecipe = async function(id) {
+  if (confirm('Möchtest du dieses Rezept wirklich aus der Cloud löschen?')) {
+    try {
+      await db.collection('recipes').doc(id).delete();
+    } catch (error) {
+      console.error("Fehler beim Löschen:", error);
+      alert("Fehler beim Löschen des Rezepts.");
+    }
+  }
 };
 
-// 3. 14-Tage-Planer
-function getNext14Days() {
-  const days = [];
-  const today = new Date();
-  
-  for (let i = 0; i < 14; i++) {
-    const d = new Date(today);
-    d.setDate(today.getDate() + i);
-    
-    const dateKey = d.toISOString().split('T')[0];
-    const options = { weekday: 'short', day: '2-digit', month: 'short' };
-    let formattedDate = d.toLocaleDateString('de-DE', options);
-    if (i === 0) formattedDate = `Heute (${formattedDate})`;
-    if (i === 1) formattedDate = `Morgen (${formattedDate})`;
+// ==========================================
+// 4. REZEPT-ANZEIGE & FILTER
+// ==========================================
+function setupSearchAndFilter() {
+  const searchInput = document.getElementById('recipe-search');
+  const categoryFilter = document.getElementById('recipe-filter-category');
 
-    days.push({ dateKey, formattedDate });
-  }
-  return days;
+  if (searchInput) searchInput.addEventListener('input', renderRecipes);
+  if (categoryFilter) categoryFilter.addEventListener('change', renderRecipes);
 }
 
-function renderPlan() {
-  const container = document.getElementById('days-container');
+window.renderRecipes = function() {
+  const container = document.getElementById('recipe-list');
+  if (!container) return;
+
+  const searchVal = document.getElementById('recipe-search') ? document.getElementById('recipe-search').value.toLowerCase().trim() : '';
+  const categoryVal = document.getElementById('recipe-filter-category') ? document.getElementById('recipe-filter-category').value : '';
+
   container.innerHTML = '';
 
-  const days = getNext14Days();
-
-  days.forEach(dayInfo => {
-    const mealIds = planMap[dayInfo.dateKey] || [];
-    const card = document.createElement('div');
-    card.className = 'day-card';
-
-    let mealsHtml = '';
-    mealIds.forEach(mealId => {
-      const recipe = recipes.find(r => r.id === mealId);
-      if (recipe) {
-        mealsHtml += `
-          <div class="meal-chip">
-            ${escapeHtml(recipe.name)}
-            <span onclick="removeMealFromDay('${dayInfo.dateKey}', '${recipe.id}')">&times;</span>
-          </div>
-        `;
-      }
-    });
-
-    let selectOptions = '<option value="">+ Gericht wählen...</option>';
-    recipes.forEach(r => {
-      selectOptions += `<option value="${r.id}">${escapeHtml(r.name)}</option>`;
-    });
-
-    card.innerHTML = `
-      <div class="day-title">${dayInfo.formattedDate}</div>
-      <div class="day-meals">${mealsHtml || '<span style="font-size:0.85rem; color:#888;">Kein Gericht geplant</span>'}</div>
-      <select onchange="addMealToDay('${dayInfo.dateKey}', this.value)">
-        ${selectOptions}
-      </select>
-    `;
-    container.appendChild(card);
-  });
-}
-
-window.addMealToDay = function(dateKey, recipeId) {
-  if (!recipeId) return;
-  if (!planMap[dateKey]) planMap[dateKey] = [];
-  planMap[dateKey].push(recipeId);
-  
-  // Wenn ein neues Gericht hinzugefügt wird, die gelöschten Elemente zurücksetzen
-  // damit neu geplante Zutaten wieder erscheinen
-  deletedItems = [];
-  
-  saveData();
-  renderPlan();
-};
-
-window.removeMealFromDay = function(dateKey, recipeId) {
-  if (!planMap[dateKey]) return;
-  const idx = planMap[dateKey].indexOf(recipeId);
-  if (idx > -1) {
-    planMap[dateKey].splice(idx, 1);
-  }
-  saveData();
-  renderPlan();
-};
-
-// 4. Intelligente Einkaufsliste (Mengenberechnung, Extra-Artikel & Löschen)
-
-function parseIngredient(str) {
-  const trimmed = str.trim();
-  const regex = /^([\d\,\.]+)\s*([a-zA-ZäöüÄÖÜß]*)\s+(.+)$/;
-  const match = trimmed.match(regex);
-
-  if (match) {
-    const amount = parseFloat(match[1].replace(',', '.'));
-    const unit = match[2].trim().toLowerCase();
-    const name = match[3].trim().toLowerCase();
-    if (!isNaN(amount)) {
-      return { amount, unit, name, rawName: match[3].trim() };
-    }
-  }
-
-  return { amount: null, unit: '', name: trimmed.toLowerCase(), rawName: trimmed };
-}
-
-function setupShoppingEvents() {
-  // Abgehakte löschen Button
-  document.getElementById('clear-checked-btn').addEventListener('click', () => {
-    // 1. Alle abgehakten Einträge zu den dauerhaft gelöschten/ausgeblendeten hinzufügen
-    checkedItems.forEach(item => {
-      if (!deletedItems.includes(item)) {
-        deletedItems.push(item);
-      }
-    });
-
-    // 2. Extra-Gewürze/Zutaten aus der Custom-Liste entfernen
-    customShoppingItems = customShoppingItems.filter(item => !checkedItems.includes(item));
-
-    // 3. Abhakspeicher leeren
-    checkedItems = [];
-
-    saveData();
-    renderShoppingList();
+  const filtered = recipes.filter(r => {
+    const matchesSearch = r.title.toLowerCase().includes(searchVal) || r.ingredients.toLowerCase().includes(searchVal);
+    const matchesCategory = categoryVal === '' || r.category === categoryVal;
+    return matchesSearch && matchesCategory;
   });
 
-  // Schnell-Hinzufügen (Gewürze etc.)
-  document.getElementById('quick-add-form').addEventListener('submit', (e) => {
-    e.preventDefault();
-    const input = document.getElementById('quick-add-input');
-    const val = input.value.trim();
-    if (val) {
-      customShoppingItems.push(val);
-      saveData();
-      renderShoppingList();
-      input.value = '';
-    }
-  });
-}
-
-function renderShoppingList() {
-  const container = document.getElementById('shopping-by-store');
-  container.innerHTML = '';
-
-  const days = getNext14Days();
-  const activeDateKeys = days.map(d => d.dateKey);
-
-  const rawIngredients = [];
-
-  // 1. Zutaten aus den nächsten 14 Tagen sammeln
-  activeDateKeys.forEach(dateKey => {
-    const mealIds = planMap[dateKey] || [];
-    mealIds.forEach(mealId => {
-      const recipe = recipes.find(r => r.id === mealId);
-      if (recipe) {
-        recipe.ingredients.forEach(ing => rawIngredients.push(ing));
-      }
-    });
-  });
-
-  // 2. Extra Artikel (Gewürze etc.) hinzufügen
-  customShoppingItems.forEach(item => rawIngredients.push(item));
-
-  // 3. Mengenkonsolidierung (Gleiche Zutat + gleiche Einheit zusammenrechnen)
-  const consolidated = {};
-
-  rawIngredients.forEach(rawStr => {
-    const parsed = parseIngredient(rawStr);
-    const key = `${parsed.name}__${parsed.unit}`;
-
-    if (!consolidated[key]) {
-      consolidated[key] = {
-        name: parsed.name,
-        rawName: parsed.rawName,
-        unit: parsed.unit,
-        amount: parsed.amount
-      };
-    } else {
-      if (parsed.amount !== null && consolidated[key].amount !== null) {
-        consolidated[key].amount += parsed.amount;
-      }
-    }
-  });
-
-  // Display-Strings erstellen
-  let formattedItems = Object.values(consolidated).map(item => {
-    if (item.amount !== null) {
-      const formattedAmount = Number.isInteger(item.amount) ? item.amount : item.amount.toFixed(1).replace('.', ',');
-      const unitStr = item.unit ? `${item.unit} ` : '';
-      return `${formattedAmount} ${unitStr}${item.rawName}`;
-    }
-    return item.rawName;
-  });
-
-  // 4. WICHTIG: Bereits gelöschte Zutaten herausfiltern!
-  formattedItems = formattedItems.filter(itemStr => !deletedItems.includes(itemStr));
-
-  if (formattedItems.length === 0) {
-    container.innerHTML = '<p class="subtitle">Keine Zutaten auf der Einkaufsliste.</p>';
+  if (filtered.length === 0) {
+    container.innerHTML = '<p style="color:#666; font-size:0.9rem; text-align:center;">Keine Rezepte gefunden.</p>';
     return;
   }
 
-  // 5. Nach Supermarkt gruppieren
-  const storeGroups = {};
-  STORES.forEach(s => storeGroups[s] = []);
+  filtered.forEach(recipe => {
+    const card = document.createElement('div');
+    card.className = 'recipe-card list-item';
+    
+    card.innerHTML = `
+      <div class="item-header">
+        <h3 style="margin:0;">${escapeHtml(recipe.title)}</h3>
+        <span class="badge">${escapeHtml(recipe.category || 'Allgemein')}</span>
+      </div>
+      
+      <div style="font-size:0.85rem; color:#666; margin: 6px 0;">
+        ⏱️ ${recipe.prepTime || 0} Min. | 👥 ${recipe.servings || 1} Person(en)
+      </div>
 
-  formattedItems.forEach(itemStr => {
-    const store = storeAssignments[itemStr] || 'Sonstige';
-    if (!storeGroups[store]) storeGroups[store] = [];
-    storeGroups[store].push(itemStr);
+      ${recipe.image ? `<img src="${recipe.image}" class="img-preview" style="max-width:100%; max-height:220px; object-fit:cover; border-radius:8px; margin:8px 0;">` : ''}
+
+      <div style="margin-top:10px;">
+        <strong>Zutaten:</strong>
+        <p style="white-space: pre-wrap; font-size:0.9rem; color:#333; margin:4px 0 10px 0;">${escapeHtml(recipe.ingredients)}</p>
+      </div>
+
+      <div>
+        <strong>Zubereitung:</strong>
+        <p style="white-space: pre-wrap; font-size:0.9rem; color:#333; margin:4px 0;">${escapeHtml(recipe.instructions)}</p>
+      </div>
+
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-top:12px; border-top:1px solid #eee; padding-top:8px;">
+        <button class="btn btn-small btn-secondary" onclick="addIngredientsToShoppingList('${recipe.id}')">🛒 Zutaten auf Einkaufszettel</button>
+        <div>
+          <button class="action-btn" onclick="editRecipe('${recipe.id}')" title="Bearbeiten">✏️</button>
+          <button class="action-btn" onclick="deleteRecipe('${recipe.id}')" title="Löschen" style="color:red;">🗑️</button>
+        </div>
+      </div>
+    `;
+    container.appendChild(card);
+  });
+};
+
+// ==========================================
+// 5. EINKAUFSZETTEL-LOGIK (Echtzeit + Supermärkte)
+// ==========================================
+
+// Artikel manuell hinzufügen (mit Laden-Zuordnung)
+window.addShoppingItem = async function(e) {
+  if (e) e.preventDefault();
+  const input = document.getElementById('shopping-input');
+  const storeSelect = document.getElementById('shopping-store');
+  if (!input) return;
+
+  const itemText = input.value.trim();
+  const store = storeSelect ? storeSelect.value : 'Sonstiges';
+
+  if (!itemText) return;
+
+  try {
+    await db.collection('shoppingList').add({
+      name: itemText,
+      store: store,
+      completed: false,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    input.value = '';
+  } catch (error) {
+    console.error("Fehler beim Hinzufügen:", error);
+  }
+};
+
+// Rezept-Zutaten gesammelt zum Einkaufszettel hinzufügen
+window.addIngredientsToShoppingList = async function(recipeId) {
+  const recipe = recipes.find(r => String(r.id) === String(recipeId));
+  if (!recipe || !recipe.ingredients) return;
+
+  const lines = recipe.ingredients.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+  if (lines.length === 0) return;
+
+  const batch = db.batch();
+  lines.forEach(line => {
+    const docRef = db.collection('shoppingList').doc();
+    batch.set(docRef, {
+      name: line,
+      store: 'Supermarkt',
+      completed: false,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
   });
 
-  STORES.forEach(store => {
-    const list = storeGroups[store] || [];
-    if (list.length > 0) {
-      const groupDiv = document.createElement('div');
-      groupDiv.className = 'store-group';
+  try {
+    await batch.commit();
+    alert(`${lines.length} Zutat(en) wurden zum Einkaufszettel hinzugefügt!`);
+  } catch (error) {
+    console.error("Fehler beim Übertragen der Zutaten:", error);
+  }
+};
 
-      let itemsHtml = '';
-      list.forEach(itemStr => {
-        const isChecked = checkedItems.includes(itemStr);
+// Artikel-Status umschalten (Abgehakt / Offen)
+window.toggleShoppingItem = async function(id, currentStatus) {
+  try {
+    await db.collection('shoppingList').doc(id).update({
+      completed: !currentStatus
+    });
+  } catch (error) {
+    console.error("Fehler beim Aktualisieren:", error);
+  }
+};
 
-        let storeOptionsHtml = STORES.map(s => 
-          `<option value="${s}" ${s === store ? 'selected' : ''}>${s}</option>`
-        ).join('');
+// Einzelnen Artikel löschen
+window.deleteShoppingItem = async function(id) {
+  try {
+    await db.collection('shoppingList').doc(id).delete();
+  } catch (error) {
+    console.error("Fehler beim Löschen:", error);
+  }
+};
 
-        itemsHtml += `
-          <li class="shopping-item ${isChecked ? 'checked' : ''}">
-            <div class="shopping-left">
-              <input type="checkbox" ${isChecked ? 'checked' : ''} onchange="toggleCheck('${escapeHtml(itemStr)}')">
-              <span>${escapeHtml(itemStr)}</span>
-            </div>
-            <select class="store-select-inline" onchange="changeIngredientStore('${escapeHtml(itemStr)}', this.value)">
-              ${storeOptionsHtml}
-            </select>
-          </li>
-        `;
-      });
+// 🗑️ Alle abgehakten/erledigten Artikel auf einmal löschen
+window.clearCompletedShoppingItems = async function() {
+  const completedItems = shoppingList.filter(item => item.completed);
+  if (completedItems.length === 0) {
+    alert("Es gibt derzeit keine abgehakten Artikel zum Löschen.");
+    return;
+  }
 
-      groupDiv.innerHTML = `
-        <div class="store-title">${store} (${list.length})</div>
-        <ul class="shopping-ul">${itemsHtml}</ul>
-      `;
-      container.appendChild(groupDiv);
+  if (confirm(`Möchtest du wirklich alle ${completedItems.length} erledigten Artikel löschen?`)) {
+    const batch = db.batch();
+    completedItems.forEach(item => {
+      const ref = db.collection('shoppingList').doc(item.id);
+      batch.delete(ref);
+    });
+
+    try {
+      await batch.commit();
+    } catch (error) {
+      console.error("Fehler beim Löschen der erledigten Artikel:", error);
     }
+  }
+};
+
+// 🏷️ Dynamische Filter-Buttons nach vorhandenen Supermärkten rendern
+function renderStoreFilterButtons() {
+  const container = document.getElementById('shopping-store-filter-container');
+  if (!container) return;
+
+  // Verfügbare Läden ermitteln
+  const storesInUse = Array.from(new Set(shoppingList.map(item => item.store || 'Sonstiges'))).sort();
+  
+  if (storesInUse.length <= 1) {
+    container.innerHTML = '';
+    return;
+  }
+
+  let html = `<div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px; align-items:center;">`;
+  html += `<span style="font-size:0.85rem; color:#666;">Filter:</span>`;
+  
+  const allActiveClass = selectedStoreFilter === "ALLE" ? 'background:#2b6cb0; color:#fff;' : 'background:#e2e8f0; color:#2d3748;';
+  html += `<button onclick="setStoreFilter('ALLE')" style="border:none; padding:4px 10px; border-radius:12px; font-size:0.8rem; cursor:pointer; ${allActiveClass}">Alle</button>`;
+
+  storesInUse.forEach(store => {
+    const activeClass = selectedStoreFilter === store ? 'background:#2b6cb0; color:#fff;' : 'background:#e2e8f0; color:#2d3748;';
+    html += `<button onclick="setStoreFilter('${escapeHtml(store)}')" style="border:none; padding:4px 10px; border-radius:12px; font-size:0.8rem; cursor:pointer; ${activeClass}">${escapeHtml(store)}</button>`;
+  });
+
+  html += `</div>`;
+  container.innerHTML = html;
+}
+
+window.setStoreFilter = function(storeName) {
+  selectedStoreFilter = storeName;
+  renderShoppingList();
+  renderStoreFilterButtons();
+};
+
+// 🛒 Einkaufsliste rendern (Gruppiert nach Supermarkt)
+function renderShoppingList() {
+  const container = document.getElementById('shopping-list-container');
+  if (!container) return;
+
+  container.innerHTML = '';
+
+  // Gefilterte Liste je nach gewähltem Store-Filter
+  const filteredList = shoppingList.filter(item => {
+    if (selectedStoreFilter === "ALLE") return true;
+    return (item.store || 'Sonstiges') === selectedStoreFilter;
+  });
+
+  if (filteredList.length === 0) {
+    container.innerHTML = '<p style="color:#666; font-size:0.9rem; text-align:center; padding: 10px 0;">Keine Artikel in dieser Ansicht.</p>';
+    return;
+  }
+
+  // 1. Artikel nach Supermarkt gruppieren
+  const groupedList = filteredList.reduce((acc, item) => {
+    const store = item.store || 'Sonstiges';
+    if (!acc[store]) acc[store] = [];
+    acc[store].push(item);
+    return acc;
+  }, {});
+
+  const stores = Object.keys(groupedList).sort();
+
+  // 2. Pro Supermarkt einen eigenen Block rendern
+  stores.forEach(storeName => {
+    const storeSection = document.createElement('div');
+    storeSection.className = 'store-group';
+    storeSection.style.cssText = 'margin-bottom: 16px; background: #f8fafc; padding: 12px; border-radius: 8px; border: 1px solid #e2e8f0;';
+
+    const storeHeader = document.createElement('h4');
+    storeHeader.style.cssText = 'margin: 0 0 8px 0; font-size: 1rem; color: #2d3748; display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid #cbd5e0; padding-bottom: 4px;';
+    storeHeader.innerHTML = `<span>🏪 <strong>${escapeHtml(storeName)}</strong></span> <small style="font-weight:normal; font-size:0.8rem; color:#718096;">${groupedList[storeName].length} Artikel</small>`;
+    
+    storeSection.appendChild(storeHeader);
+
+    const itemsContainer = document.createElement('div');
+
+    // Abgehakte Artikel innerhalb der Gruppe nach unten sortieren
+    groupedList[storeName].sort((a, b) => a.completed - b.completed);
+
+    groupedList[storeName].forEach(item => {
+      const el = document.createElement('div');
+      el.className = 'shopping-item';
+      el.style.cssText = 'display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:1px solid #edf2f7;';
+
+      el.innerHTML = `
+        <span style="text-decoration: ${item.completed ? 'line-through' : 'none'}; color: ${item.completed ? '#a0aec0' : '#2d3748'}; cursor:pointer; font-size:0.95rem; user-select:none;" 
+              onclick="toggleShoppingItem('${item.id}', ${item.completed})">
+          ${item.completed ? '✅' : '⬜'} ${escapeHtml(item.name)}
+        </span>
+        <button onclick="deleteShoppingItem('${item.id}')" title="Löschen" style="color:#e53e3e; background:none; border:none; cursor:pointer; font-size:1.1rem; padding: 0 4px;">&times;</button>
+      `;
+      itemsContainer.appendChild(el);
+    });
+
+    storeSection.appendChild(itemsContainer);
+    container.appendChild(storeSection);
   });
 }
 
-window.changeIngredientStore = function(itemStr, newStore) {
-  storeAssignments[itemStr] = newStore;
-  saveData();
-  renderShoppingList();
-};
-
-window.toggleCheck = function(itemStr) {
-  const index = checkedItems.indexOf(itemStr);
-  if (index > -1) {
-    checkedItems.splice(index, 1);
-  } else {
-    checkedItems.push(itemStr);
-  }
-  saveData();
-  renderShoppingList();
-};
-
+// ==========================================
+// 6. HILFSFUNKTIONEN
+// ==========================================
 function escapeHtml(str) {
-  return str.replace(/[&<>"']/g, function(m) {
-    return {
-      '&': '&amp;',
-      '<': '&lt;',
-      '>': '&gt;',
-      '"': '&quot;',
-      "'": '&#039;'
-    }[m];
+  if (!str) return '';
+  return String(str).replace(/[&<>"']/g, function(m) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[m];
   });
 }

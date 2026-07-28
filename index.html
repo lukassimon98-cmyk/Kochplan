@@ -2,83 +2,342 @@
 <html lang="de">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>Mein Kochplan</title>
-  <link rel="stylesheet" href="styles.css">
-  <link rel="manifest" href="manifest.json">
-  <meta name="theme-color" content="#4CAF50">
-  <link rel="apple-touch-icon" href="https://via.placeholder.com/192/4CAF50/ffffff?text=Kochplan">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Meine Koch- & Rezept-App</title>
+  
+  <!-- Firebase SDKs (Compat-Versionen) -->
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+
+  <!-- Eigenes JS-Skript (mit Cache-Buster v=3) -->
+  <script src="app.js?v=3" defer></script>
+
+  <style>
+    :root {
+      --primary: #2b6cb0;
+      --primary-hover: #2c5282;
+      --bg-color: #f7fafc;
+      --card-bg: #ffffff;
+      --text-color: #2d3748;
+      --border-color: #e2e8f0;
+      --danger: #e53e3e;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    body {
+      background-color: var(--bg-color);
+      color: var(--text-color);
+      line-height: 1.5;
+      padding-bottom: 40px;
+    }
+
+    /* Header & Navigation */
+    header {
+      background-color: var(--primary);
+      color: white;
+      padding: 16px;
+      text-align: center;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    header h1 {
+      font-size: 1.4rem;
+      margin-bottom: 12px;
+    }
+
+    nav {
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .nav-btn {
+      background: rgba(255, 255, 255, 0.2);
+      border: none;
+      color: white;
+      padding: 8px 16px;
+      border-radius: 20px;
+      font-weight: 600;
+      cursor: pointer;
+      font-size: 0.9rem;
+      transition: background 0.2s;
+    }
+
+    .nav-btn.active {
+      background: white;
+      color: var(--primary);
+    }
+
+    /* Layout Container */
+    .container {
+      max-width: 600px;
+      margin: 20px auto;
+      padding: 0 16px;
+    }
+
+    .view-content {
+      background: var(--card-bg);
+      padding: 20px;
+      border-radius: 12px;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    /* Formulare & Eingaben */
+    h2 {
+      font-size: 1.2rem;
+      margin-bottom: 16px;
+      color: #1a202c;
+    }
+
+    .form-group {
+      margin-bottom: 14px;
+    }
+
+    .form-row {
+      display: flex;
+      gap: 10px;
+    }
+
+    label {
+      display: block;
+      font-size: 0.85rem;
+      font-weight: 600;
+      margin-bottom: 4px;
+      color: #4a5568;
+    }
+
+    input, select, textarea {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      font-size: 0.95rem;
+      background: #fff;
+    }
+
+    input:focus, select:focus, textarea:focus {
+      outline: none;
+      border-color: var(--primary);
+    }
+
+    /* Buttons */
+    .btn {
+      display: inline-block;
+      width: 100%;
+      padding: 10px 16px;
+      border: none;
+      border-radius: 6px;
+      font-weight: 600;
+      cursor: pointer;
+      text-align: center;
+      font-size: 0.95rem;
+    }
+
+    .btn-primary {
+      background-color: var(--primary);
+      color: white;
+    }
+
+    .btn-primary:hover {
+      background-color: var(--primary-hover);
+    }
+
+    .btn-secondary {
+      background-color: #edf2f7;
+      color: #4a5568;
+      border: 1px solid var(--border-color);
+    }
+
+    .btn-small {
+      padding: 6px 12px;
+      font-size: 0.85rem;
+      width: auto;
+    }
+
+    .action-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 1.1rem;
+      padding: 4px 8px;
+    }
+
+    /* Rezept-Karten */
+    .list-item {
+      background: #fff;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 14px;
+      margin-bottom: 14px;
+    }
+
+    .item-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .badge {
+      background: #ebf8ff;
+      color: #2b6cb0;
+      font-size: 0.75rem;
+      font-weight: bold;
+      padding: 2px 8px;
+      border-radius: 12px;
+    }
+
+    .search-bar {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+  </style>
 </head>
 <body>
 
   <header>
-    <h1>Mein Kochplan</h1>
+    <h1>🍳 Meine Koch-App</h1>
+    <nav>
+      <button class="nav-btn active" onclick="switchTab('recipes')">Rezepte</button>
+      <button class="nav-btn" onclick="switchTab('add-recipe')">+ Rezept</button>
+      <button class="nav-btn" onclick="switchTab('shopping')">Einkaufszettel</button>
+    </nav>
   </header>
 
-  <nav class="nav-bar">
-    <button class="nav-btn active" data-tab="recipes">Gerichte</button>
-    <button class="nav-btn" data-tab="plan">14-Tage-Plan</button>
-    <button class="nav-btn" data-tab="shopping">Einkaufsliste</button>
-  </nav>
+  <div class="container">
 
-  <main>
-    <!-- TAB 1: GERICHTE -->
-    <section id="recipes" class="tab-content active">
-      <h2 id="recipe-form-title">Neues Gericht hinzufügen</h2>
-      <form id="recipe-form" class="card">
-        <input type="hidden" id="recipe-id">
-        <input type="text" id="recipe-name" placeholder="Name des Gerichts (z. B. Spaghetti Bolognese)" required>
-        <textarea id="recipe-ingredients" placeholder="Zutaten mit Menge (eine pro Zeile)&#10;z. B.&#10;400g Nudeln&#10;500g Hackfleisch&#10;1 Dose Tomaten" rows="5" required></textarea>
-        
-        <button type="submit" id="recipe-submit-btn" class="btn btn-primary">Gericht speichern</button>
-        <button type="button" id="recipe-cancel-btn" class="btn btn-secondary hidden" style="margin-top: 8px;">Abbrechen</button>
-      </form>
+    <!-- ========================================== -->
+    <!-- TAB 1: REZEPTE UEBERSICHT & SUCHE -->
+    <!-- ========================================== -->
+    <div id="view-recipes" class="view-content">
+      <h2>📖 Meine Rezepte</h2>
 
-      <h2>Meine Gerichte</h2>
-      <div id="recipes-list" class="list-container"></div>
-    </section>
-
-    <!-- TAB 2: 14-TAGE-PLAN -->
-    <section id="plan" class="tab-content">
-      <h2>Wochenplaner (Nächste 14 Tage)</h2>
-      <p class="subtitle">Plane deine Mahlzeiten im Voraus:</p>
-      <div id="days-container" class="list-container"></div>
-    </section>
-
-    <!-- TAB 3: EINKAUFSLISTE -->
-    <section id="shopping" class="tab-content">
-      <div class="header-actions">
-        <h2>Einkaufsliste</h2>
-        <button id="clear-checked-btn" class="btn btn-small btn-danger-outline">Abgehakte löschen</button>
+      <!-- Such- & Filterleiste -->
+      <div class="search-bar">
+        <input type="text" id="recipe-search" placeholder="🔍 Rezept oder Zutat suchen..." style="flex: 2;">
+        <select id="recipe-filter-category" style="flex: 1;">
+          <option value="">Alle Kategorien</option>
+          <option value="Hauptspeise">Hauptspeise</option>
+          <option value="Vorspeise">Vorspeise</option>
+          <option value="Dessert">Dessert</option>
+          <option value="Snack / Gebäck">Snack / Gebäck</option>
+        </select>
       </div>
 
-      <!-- Schnell-Hinzufügen für Gewürze / Extra Artikel -->
-      <form id="quick-add-form" class="card quick-add-card">
-        <input type="text" id="quick-add-input" placeholder="Extra Zutat/Gewürz (z.B. Salz, 1 Prise Pfeffer)" required>
-        <button type="submit" class="btn btn-primary btn-small-inline">+ Hinzufügen</button>
+      <!-- Liste der Rezepte (wird von JS gefuellt) -->
+      <div id="recipe-list"></div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- TAB 2: NEUES REZEPT ANLEGEN / EDITIEREN -->
+    <!-- ========================================== -->
+    <div id="view-add-recipe" class="view-content hidden">
+      <h2 id="recipe-form-title">Neues Rezept anlegen</h2>
+
+      <form id="recipe-form">
+        <!-- Verstecktes ID-Feld fuer den Bearbeiten-Modus -->
+        <input type="hidden" id="recipe-id">
+
+        <div class="form-group">
+          <label for="recipe-title">Name des Gerichts *</label>
+          <input type="text" id="recipe-title" placeholder="z. B. Spaghetti Bolognese" required>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group" style="flex: 1;">
+            <label for="recipe-category">Kategorie</label>
+            <select id="recipe-category">
+              <option value="Hauptspeise">Hauptspeise</option>
+              <option value="Vorspeise">Vorspeise</option>
+              <option value="Dessert">Dessert</option>
+              <option value="Snack / Gebäck">Snack / Gebäck</option>
+            </select>
+          </div>
+          <div class="form-group" style="flex: 1;">
+            <label for="recipe-time">Dauer (Min.)</label>
+            <input type="number" id="recipe-time" placeholder="30" min="0">
+          </div>
+          <div class="form-group" style="flex: 1;">
+            <label for="recipe-servings">Portionen</label>
+            <input type="number" id="recipe-servings" placeholder="2" min="1" value="2">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="recipe-image">Foto hinzufügen (Optional)</label>
+          <input type="file" id="recipe-image" accept="image/*">
+          <div id="image-preview-container" class="hidden" style="margin-top: 8px;">
+            <img id="recipe-image-preview" src="" alt="Vorschau" style="max-width: 100%; max-height: 150px; border-radius: 6px;">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="recipe-ingredients">Zutaten (Eine Zutat pro Zeile) *</label>
+          <textarea id="recipe-ingredients" rows="5" placeholder="500g Hackfleisch&#10;1 Dose Tomaten&#10;1 Zwiebel" required></textarea>
+        </div>
+
+        <div class="form-group">
+          <label for="recipe-instructions">Zubereitung *</label>
+          <textarea id="recipe-instructions" rows="5" placeholder="Zwiebeln würfeln und anbraten..." required></textarea>
+        </div>
+
+        <div style="display: flex; gap: 8px; margin-top: 16px;">
+          <button type="submit" id="recipe-submit-btn" class="btn btn-primary" style="flex: 2;">Rezept speichern</button>
+          <button type="button" class="btn btn-secondary" style="flex: 1;" onclick="resetRecipeForm(); switchTab('recipes');">Abbrechen</button>
+        </div>
+      </form>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- TAB 3: EINKAUFSZETTEL (GRUPPIERT NACH LADEN) -->
+    <!-- ========================================== -->
+    <div id="view-shopping" class="view-content hidden">
+      <h2>🛒 Einkaufszettel</h2>
+
+      <!-- Formular zum Hinzufügen von Artikeln -->
+      <form onsubmit="addShoppingItem(event)" style="display:flex; gap:8px; margin-bottom:12px;">
+        <input type="text" id="shopping-input" placeholder="Artikel eingeben..." required style="flex:2;">
+        
+        <select id="shopping-store" style="flex:1;">
+          <option value="Edeka">Edeka</option>
+          <option value="Rewe">Rewe</option>
+          <option value="Aldi">Aldi</option>
+          <option value="Lidl">Lidl</option>
+          <option value="DM">DM</option>
+          <option value="Sonstiges" selected>Sonstiges</option>
+        </select>
+
+        <button type="submit" class="btn btn-primary" style="width: auto; padding: 0 16px;">+</button>
       </form>
 
-      <p class="subtitle">Sortiert nach Supermarkt (Mengen automatisch zusammengerechnet):</p>
-      <div id="shopping-by-store"></div>
-    </section>
-  </main>
+      <!-- Dynamischer Schnellfilter fuer Supermärkte -->
+      <div id="shopping-store-filter-container"></div>
 
-  <script src="app.js"></script>
+      <!-- Liste der nach Supermarkt gruppierten Artikel -->
+      <div id="shopping-list-container"></div>
 
-  <!-- Inline Service Worker -->
-  <script>
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        const swCode = `
-          const CACHE_NAME = 'kochplan-v4';
-          self.addEventListener('install', e => e.waitUntil(caches.open(CACHE_NAME).then(c => c.addAll(['./', './index.html', './styles.css', './app.js', './manifest.json']))));
-          self.addEventListener('fetch', e => e.respondWith(caches.match(e.request).then(res => res || fetch(e.request))));
-        `;
-        const blob = new Blob([swCode], { type: 'application/javascript' });
-        const swUrl = URL.createObjectURL(blob);
-        navigator.serviceWorker.register(swUrl).catch(err => console.log('SW Register Fail:', err));
-      });
-    }
-  </script>
+      <!-- Button zum Löschen aller erledigten Einträge -->
+      <div style="text-align:right; margin-top:16px;">
+        <button onclick="clearCompletedShoppingItems()" class="btn btn-secondary btn-small" style="color: var(--danger); border-color: #feb2b2;">
+          🗑️ Abgehakte Artikel löschen
+        </button>
+      </div>
+    </div>
+
+  </div>
+
 </body>
 </html>
