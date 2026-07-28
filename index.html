@@ -9,8 +9,8 @@
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
 
-  <!-- Eigenes JS-Skript (mit Cache-Buster v=3) -->
-  <script src="app.js?v=3" defer></script>
+  <!-- Eigenes JS-Skript (mit Cache-Buster v=4) -->
+  <script src="app.js?v=4" defer></script>
 
   <style>
     :root {
@@ -21,6 +21,7 @@
       --text-color: #2d3748;
       --border-color: #e2e8f0;
       --danger: #e53e3e;
+      --success: #38a169;
     }
 
     * {
@@ -41,7 +42,7 @@
     header {
       background-color: var(--primary);
       color: white;
-      padding: 16px;
+      padding: 16px 10px;
       text-align: center;
       box-shadow: 0 2px 4px rgba(0,0,0,0.1);
       position: sticky;
@@ -50,25 +51,26 @@
     }
 
     header h1 {
-      font-size: 1.4rem;
-      margin-bottom: 12px;
+      font-size: 1.3rem;
+      margin-bottom: 10px;
     }
 
     nav {
       display: flex;
       justify-content: center;
-      gap: 8px;
+      gap: 4px;
+      flex-wrap: wrap;
     }
 
     .nav-btn {
       background: rgba(255, 255, 255, 0.2);
       border: none;
       color: white;
-      padding: 8px 16px;
+      padding: 6px 12px;
       border-radius: 20px;
       font-weight: 600;
       cursor: pointer;
-      font-size: 0.9rem;
+      font-size: 0.85rem;
       transition: background 0.2s;
     }
 
@@ -79,9 +81,9 @@
 
     /* Layout Container */
     .container {
-      max-width: 600px;
+      max-width: 650px;
       margin: 20px auto;
-      padding: 0 16px;
+      padding: 0 12px;
     }
 
     .view-content {
@@ -128,11 +130,6 @@
       background: #fff;
     }
 
-    input:focus, select:focus, textarea:focus {
-      outline: none;
-      border-color: var(--primary);
-    }
-
     /* Buttons */
     .btn {
       display: inline-block;
@@ -151,14 +148,15 @@
       color: white;
     }
 
-    .btn-primary:hover {
-      background-color: var(--primary-hover);
-    }
-
     .btn-secondary {
       background-color: #edf2f7;
       color: #4a5568;
       border: 1px solid var(--border-color);
+    }
+
+    .btn-success {
+      background-color: var(--success);
+      color: white;
     }
 
     .btn-small {
@@ -167,42 +165,48 @@
       width: auto;
     }
 
-    .action-btn {
-      background: none;
-      border: none;
-      cursor: pointer;
-      font-size: 1.1rem;
-      padding: 4px 8px;
-    }
-
-    /* Rezept-Karten */
-    .list-item {
-      background: #fff;
+    /* Wochenplan Kacheln */
+    .meal-day-card {
       border: 1px solid var(--border-color);
       border-radius: 8px;
-      padding: 14px;
-      margin-bottom: 14px;
+      padding: 12px;
+      margin-bottom: 10px;
+      background: #f8fafc;
     }
 
-    .item-header {
+    .meal-day-header {
+      font-weight: bold;
+      color: var(--primary);
+      margin-bottom: 6px;
       display: flex;
       justify-content: space-between;
-      align-items: center;
+      font-size: 0.95rem;
     }
 
-    .badge {
-      background: #ebf8ff;
-      color: #2b6cb0;
-      font-size: 0.75rem;
+    /* Shopping List Store Grouping */
+    .store-section {
+      margin-bottom: 20px;
+    }
+    .store-title {
+      font-size: 1rem;
       font-weight: bold;
-      padding: 2px 8px;
-      border-radius: 12px;
+      color: var(--primary);
+      border-bottom: 2px solid var(--border-color);
+      padding-bottom: 4px;
+      margin-bottom: 8px;
     }
 
-    .search-bar {
+    .shopping-item-row {
       display: flex;
-      gap: 8px;
-      margin-bottom: 16px;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 0;
+      border-bottom: 1px solid #edf2f7;
+    }
+
+    .shopping-item-row.completed span {
+      text-decoration: line-through;
+      color: #a0aec0;
     }
   </style>
 </head>
@@ -213,7 +217,8 @@
     <nav>
       <button class="nav-btn active" onclick="switchTab('recipes')">Rezepte</button>
       <button class="nav-btn" onclick="switchTab('add-recipe')">+ Rezept</button>
-      <button class="nav-btn" onclick="switchTab('shopping')">Einkaufszettel</button>
+      <button class="nav-btn" onclick="switchTab('meal-plan')">📅 Wochenplan</button>
+      <button class="nav-btn" onclick="switchTab('shopping')">🛒 Einkaufszettel</button>
     </nav>
   </header>
 
@@ -224,10 +229,8 @@
     <!-- ========================================== -->
     <div id="view-recipes" class="view-content">
       <h2>📖 Meine Rezepte</h2>
-
-      <!-- Such- & Filterleiste -->
-      <div class="search-bar">
-        <input type="text" id="recipe-search" placeholder="🔍 Rezept oder Zutat suchen..." style="flex: 2;">
+      <div class="search-bar" style="display: flex; gap: 8px; margin-bottom: 16px;">
+        <input type="text" id="recipe-search" placeholder="🔍 Suche..." style="flex: 2;">
         <select id="recipe-filter-category" style="flex: 1;">
           <option value="">Alle Kategorien</option>
           <option value="Hauptspeise">Hauptspeise</option>
@@ -236,8 +239,6 @@
           <option value="Snack / Gebäck">Snack / Gebäck</option>
         </select>
       </div>
-
-      <!-- Liste der Rezepte (wird von JS gefuellt) -->
       <div id="recipe-list"></div>
     </div>
 
@@ -248,7 +249,6 @@
       <h2 id="recipe-form-title">Neues Rezept anlegen</h2>
 
       <form id="recipe-form">
-        <!-- Verstecktes ID-Feld fuer den Bearbeiten-Modus -->
         <input type="hidden" id="recipe-id">
 
         <div class="form-group">
@@ -285,13 +285,13 @@
         </div>
 
         <div class="form-group">
-          <label for="recipe-ingredients">Zutaten (Eine Zutat pro Zeile) *</label>
+          <label for="recipe-ingredients">Zutaten (Eine Zutat pro Zeile, z.B. 500g Hackfleisch) *</label>
           <textarea id="recipe-ingredients" rows="5" placeholder="500g Hackfleisch&#10;1 Dose Tomaten&#10;1 Zwiebel" required></textarea>
         </div>
 
         <div class="form-group">
           <label for="recipe-instructions">Zubereitung *</label>
-          <textarea id="recipe-instructions" rows="5" placeholder="Zwiebeln würfeln und anbraten..." required></textarea>
+          <textarea id="recipe-instructions" rows="5" placeholder="Zwiebeln würfeln..." required></textarea>
         </div>
 
         <div style="display: flex; gap: 8px; margin-top: 16px;">
@@ -302,14 +302,30 @@
     </div>
 
     <!-- ========================================== -->
-    <!-- TAB 3: EINKAUFSZETTEL (GRUPPIERT NACH LADEN) -->
+    <!-- TAB 3: 14-TAGE ESSENSPLAN -->
+    <!-- ========================================== -->
+    <div id="view-meal-plan" class="view-content hidden">
+      <h2>📅 14-Tage Essensplan</h2>
+      <p style="font-size: 0.85rem; color: #718096; margin-bottom: 12px;">
+        Plane deine Gerichte für die nächsten 14 Tage. 
+      </p>
+
+      <button onclick="transferMealPlanToShoppingList()" class="btn btn-success" style="margin-bottom: 16px;">
+        🛒 Zutaten aller gewählten Gerichte auf Einkaufsliste setzen
+      </button>
+
+      <div id="meal-plan-list"></div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- TAB 4: EINKAUFSZETTEL -->
     <!-- ========================================== -->
     <div id="view-shopping" class="view-content hidden">
       <h2>🛒 Einkaufszettel</h2>
 
-      <!-- Formular zum Hinzufügen von Artikeln -->
-      <form onsubmit="addShoppingItem(event)" style="display:flex; gap:8px; margin-bottom:12px;">
-        <input type="text" id="shopping-input" placeholder="Artikel eingeben..." required style="flex:2;">
+      <!-- Manueller Eintrag -->
+      <form onsubmit="addShoppingItemManual(event)" style="display:flex; gap:8px; margin-bottom:12px;">
+        <input type="text" id="shopping-input" placeholder="Artikel (z. B. 500g Hackfleisch)" required style="flex:2;">
         
         <select id="shopping-store" style="flex:1;">
           <option value="Edeka">Edeka</option>
@@ -323,13 +339,9 @@
         <button type="submit" class="btn btn-primary" style="width: auto; padding: 0 16px;">+</button>
       </form>
 
-      <!-- Dynamischer Schnellfilter fuer Supermärkte -->
-      <div id="shopping-store-filter-container"></div>
-
-      <!-- Liste der nach Supermarkt gruppierten Artikel -->
+      <!-- Liste der Artikel -->
       <div id="shopping-list-container"></div>
 
-      <!-- Button zum Löschen aller erledigten Einträge -->
       <div style="text-align:right; margin-top:16px;">
         <button onclick="clearCompletedShoppingItems()" class="btn btn-secondary btn-small" style="color: var(--danger); border-color: #feb2b2;">
           🗑️ Abgehakte Artikel löschen
